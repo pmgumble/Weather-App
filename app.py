@@ -1,12 +1,21 @@
+import os
 import requests
 from flask import Flask, render_template, request
 from flask_sqlalchemy import SQLAlchemy 
+current_dir = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
 app.config['DEBUG'] = True
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///weather.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(current_dir, "testdb.sqlite3") 
 
 db = SQLAlchemy(app)
+db.init_app(app)
+app.app_context().push()
+
+@app.before_first_request
+def create_tables():
+    db.create_all()
+
 
 class City(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -15,19 +24,39 @@ class City(db.Model):
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    url = 'http://api.openweathermap.org/data/2.5/weather?q={}&units=imperial&appid=176ad949708eb8a0fb99205631a952c6'
-    city = 'Amravati'
-    r = requests.get(url.format(city)).json()
-    print(r)
+    if request.method == 'POST':
+        new_city = request.form.get('city')
+        
+        if new_city:
+            new_city_obj = City(name=new_city)
 
-    weather = {
-            'city' : city,
+            db.session.add(new_city_obj)
+            db.session.commit()
+
+    cities = City.query.all()
+
+    url = 'http://api.openweathermap.org/data/2.5/weather?q={}&units=imperial&appid=176ad949708eb8a0fb99205631a952c6'
+    # city = 'Amravati'
+    weather_data = []
+
+
+    for city in cities:
+
+        r = requests.get(url.format(city.name)).json()
+        
+        weather = {
+            'city' : city.name,
             'temperature' : r['main']['temp'],
             'description' : r['weather'][0]['description'],
             'icon' : r['weather'][0]['icon'],
         }
 
-    return render_template('weather.html', weather_data=weather)
+        weather_data.append(weather)
+
+
+    return render_template('weather.html', weather_data=weather_data)
 
 if __name__ == '__main__':
 	app.run(debug=True)
+
+    
